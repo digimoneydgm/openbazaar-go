@@ -47,6 +47,7 @@ type RPCWallet struct {
 	notifications    *NotificationListener
 	rpcBasePath      string
 	rpcLock          *sync.Mutex
+	initChan         chan struct{}
 }
 
 // NewRPCWallet creates a new wallet given
@@ -70,6 +71,7 @@ func NewRPCWallet(mnemonic string, params *chaincfg.Params, repoPath string, DB 
 	mPubKey, _ := mPrivKey.Neuter()
 
 	keyManager, _ := spvwallet.NewKeyManager(DB.Keys(), params, mPrivKey)
+	log.Info(keyManager)
 
 	txstore, _ := NewTxStore(params, DB, keyManager)
 
@@ -83,6 +85,7 @@ func NewRPCWallet(mnemonic string, params *chaincfg.Params, repoPath string, DB 
 		connCfg:          connCfg,
 		rpcBasePath:      host,
 		rpcLock:          new(sync.Mutex),
+		initChan:         make(chan struct{}),
 	}
 	return &w
 }
@@ -160,12 +163,9 @@ func (w *RPCWallet) CurrentAddress(purpose wallet.KeyPurpose) btc.Address {
 
 // NewAddress creates a new address
 func (w *RPCWallet) NewAddress(purpose wallet.KeyPurpose) btc.Address {
-	i, _ := w.DB.Keys().GetUnused(purpose)
-	key, _ := w.keyManager.GenerateChildKey(purpose, uint32(i[1]))
-	addr, _ := key.Address(w.params)
-	w.DB.Keys().MarkKeyAsUsed(addr.ScriptAddress())
-	w.DB.PopulateAdrs()
-	return btc.Address(addr)
+	<-w.initChan
+	addr, _ := w.rpcClient.GetNewAddress(Account)
+	return addr
 }
 
 // DecodeAddress decodes an address string to an address using the wallet's chain parameters
